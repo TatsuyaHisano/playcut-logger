@@ -1,0 +1,1328 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>PLAYCUT LOGGER</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0f12">
+<meta name="color-scheme" content="dark">
+<meta name="description" content="オフラインで試合を記録するロガー。">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<!-- iOS: ホーム画面追加でフルスクリーン起動させるための旧来のメタ。まだ必要。 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PLAYCUT">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+<style>
+/* ---------- 土台 ---------- */
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --bg:#0d0f12; --panel:#15181d; --panel2:#1c2027; --line:#2a2f38;
+  --ink:#f2f5f8; --muted:#8b94a3; --lime:#d8ff3e; --red:#ff4d24; --blue:#5b7cff;
+  --ok:#3ddc84; --warn:#ffb020;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
+}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP","Segoe UI",Roboto,sans-serif;
+  font-size:16px; line-height:1.4;
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent;
+  overscroll-behavior:none;
+  touch-action:manipulation;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none}
+:focus-visible{outline:2px solid var(--lime);outline-offset:2px}
+.hidden{display:none !important}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+#app{
+  min-height:100%; display:flex; flex-direction:column;
+  padding:var(--safe-t) var(--safe-r) var(--safe-b) var(--safe-l);
+}
+
+/* ---------- ヘッダ ---------- */
+header.top{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel);
+  position:sticky;top:0;z-index:20;
+}
+.brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.06em;font-size:14px}
+.brand i{width:10px;height:10px;border-radius:50%;background:#3a4150;flex:none;transition:background .2s}
+.brand i.on{background:var(--lime);box-shadow:0 0 10px var(--lime)}
+.top .spacer{flex:1}
+.pill{
+  font-size:11px;padding:4px 9px;border-radius:999px;border:1px solid var(--line);
+  color:var(--muted);white-space:nowrap
+}
+.pill.live{color:var(--lime);border-color:#3d4a1f}
+.pill.off{color:var(--warn);border-color:#4a3a18}
+.icon-btn{
+  width:40px;height:40px;border-radius:12px;background:var(--panel2);
+  display:grid;place-items:center;font-size:17px;flex:none
+}
+
+/* ---------- タブ ---------- */
+nav.tabs{display:flex;gap:6px;padding:10px 14px 0}
+nav.tabs button{
+  flex:1;padding:11px 4px;border-radius:12px 12px 0 0;background:var(--panel);
+  color:var(--muted);font-size:13px;font-weight:700;border-bottom:2px solid transparent
+}
+nav.tabs button[aria-selected="true"]{color:var(--ink);background:var(--panel2);border-bottom-color:var(--lime)}
+
+main{flex:1;padding:14px;padding-bottom:calc(24px + var(--safe-b))}
+section.view{display:none}
+section.view.active{display:block}
+
+/* ---------- スコアボード ---------- */
+.scoreboard{
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;
+  padding:14px;margin-bottom:12px
+}
+.meta-line{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--muted);margin-bottom:10px}
+.meta-line b{color:var(--ink);font-weight:700}
+.score-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
+.team-block{min-width:0;text-align:center}
+.team-block .sh{
+  font-size:12px;font-weight:800;letter-spacing:.08em;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+.team-block .nm{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.team-block .pts{font-size:46px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;margin-top:4px}
+.clock-cell{text-align:center;min-width:112px}
+.clock-cell .per{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:.08em}
+.clock-btn{
+  display:block;width:100%;padding:4px 8px;border-radius:12px;background:transparent;
+  font-size:34px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.02em
+}
+.clock-btn.running{color:var(--lime)}
+.clock-hint{font-size:10px;color:var(--muted)}
+
+/* ---------- クロック操作 ---------- */
+.clock-tools{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.clock-tools button{
+  flex:1 1 0;min-width:60px;padding:11px 6px;border-radius:12px;background:var(--panel2);
+  border:1px solid var(--line);font-size:12px;font-weight:700;color:var(--muted)
+}
+.clock-tools button.strong{color:var(--ink)}
+
+/* ---------- 記録ボタン ---------- */
+.log-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.side-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:10px;min-width:0}
+.side-card > .cap{
+  display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:.06em;
+  margin-bottom:8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis
+}
+.side-card > .cap span.dot{width:9px;height:9px;border-radius:3px;flex:none}
+.primary-act{
+  width:100%;padding:16px 8px;border-radius:14px;background:var(--lime);color:#10130a;
+  font-size:20px;font-weight:900;letter-spacing:.04em;margin-bottom:8px;
+  display:flex;flex-direction:column;align-items:center;gap:1px
+}
+.primary-act small{font-size:11px;font-weight:800;opacity:.72}
+.primary-act:disabled{opacity:.35}
+.sub-acts{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sub-acts button{
+  padding:11px 4px;border-radius:11px;background:var(--panel2);border:1px solid var(--line);
+  font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+}
+.sub-acts button.wide{grid-column:1/-1}
+.sub-acts button.star{color:var(--lime);border-color:#3d4a1f}
+.sub-acts button:disabled{opacity:.35}
+
+.match-tools{display:flex;gap:6px;margin:12px 0}
+.match-tools button{
+  flex:1;padding:12px 6px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);
+  font-size:12px;font-weight:700
+}
+.match-tools button.danger{color:var(--red);border-color:#4a2318}
+
+/* ---------- メモ ---------- */
+.note-row{display:flex;gap:6px;margin-bottom:12px}
+.note-row input{
+  flex:1;min-width:0;padding:12px;border-radius:12px;background:var(--panel2);
+  border:1px solid var(--line)
+}
+.note-row button{padding:12px 16px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);font-weight:700}
+
+/* ---------- タイムライン ---------- */
+.tl-head{display:flex;align-items:center;gap:8px;margin:4px 0 8px}
+.tl-head h2{font-size:13px;margin:0;letter-spacing:.06em}
+.tl-head .spacer{flex:1}
+.tl-head label{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px}
+ul.timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.timeline li{
+  display:flex;align-items:center;gap:9px;padding:10px 11px;border-radius:12px;
+  background:var(--panel);border:1px solid var(--line)
+}
+ul.timeline li.sys{opacity:.55}
+ul.timeline li.hl{border-color:#3d4a1f}
+li .t{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;flex:none;width:74px}
+li .lb{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+li .tm{font-size:10px;font-weight:800;letter-spacing:.06em;flex:none;padding:2px 6px;border-radius:6px;background:var(--panel2)}
+li .dl{font-size:12px;color:var(--red);flex:none;width:26px;text-align:center}
+.empty{color:var(--muted);font-size:13px;text-align:center;padding:26px 10px}
+
+/* ---------- 設定フォーム ---------- */
+.field{margin-bottom:12px}
+.field > label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;font-weight:700;letter-spacing:.04em}
+.field input,.field select{
+  width:100%;padding:12px;border-radius:12px;background:var(--panel2);border:1px solid var(--line)
+}
+.field input[type=color]{padding:4px;height:46px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:2fr 1fr 56px;gap:8px}
+fieldset{border:1px solid var(--line);border-radius:16px;padding:14px;margin:0 0 14px}
+legend{font-size:11px;color:var(--muted);font-weight:800;letter-spacing:.08em;padding:0 6px}
+.seg{display:flex;gap:6px}
+.seg button{
+  flex:1;padding:12px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);
+  font-size:13px;font-weight:700;color:var(--muted)
+}
+.seg button[aria-pressed="true"]{background:var(--lime);color:#10130a;border-color:var(--lime)}
+
+/* ---------- データ画面 ---------- */
+.big-btn{
+  width:100%;padding:15px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);
+  font-size:14px;font-weight:700;margin-bottom:8px;text-align:left;
+  display:flex;align-items:center;gap:10px
+}
+.big-btn.accent{background:var(--lime);color:#10130a;border-color:var(--lime)}
+.big-btn small{display:block;font-size:11px;font-weight:600;opacity:.7;margin-top:2px}
+.big-btn > span.ic{font-size:19px;flex:none}
+.big-btn > span.tx{flex:1;min-width:0}
+ul.matches{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ul.matches li{
+  display:flex;align-items:center;gap:10px;padding:12px;border-radius:14px;
+  background:var(--panel);border:1px solid var(--line)
+}
+ul.matches li.cur{border-color:var(--lime)}
+ul.matches li .info{flex:1;min-width:0}
+ul.matches li .info b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ul.matches li .info small{color:var(--muted);font-size:11px}
+ul.matches li button{padding:9px 11px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);font-size:12px;font-weight:700;flex:none}
+ul.matches li button.del{color:var(--red)}
+
+.note{font-size:12px;color:var(--muted);line-height:1.6;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px}
+.note code{background:var(--panel2);padding:1px 5px;border-radius:5px;font-size:11px}
+#jsonFbText{
+  width:100%;height:40vh;padding:10px;border-radius:12px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--ink);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px;line-height:1.5;
+  white-space:pre-wrap;word-break:break-all;resize:vertical
+}
+
+/* ---------- トースト ---------- */
+#toast{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(18px + var(--safe-b));z-index:60;
+  background:#e9edf3;color:#10131a;font-size:13px;font-weight:700;
+  padding:11px 16px;border-radius:999px;max-width:88vw;text-align:center;
+  box-shadow:0 8px 26px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .18s
+}
+#toast.show{opacity:1}
+
+@media (max-width:340px){
+  .log-grid{grid-template-columns:1fr}
+  .team-block .pts{font-size:38px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand"><i id="liveDot"></i>PLAYCUT LOGGER</div>
+    <div class="spacer"></div>
+    <span class="pill" id="netPill">…</span>
+    <span class="pill" id="savePill">保存済</span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-log"  aria-selected="true"  aria-controls="view-log">記録</button>
+    <button role="tab" id="tab-set"  aria-selected="false" aria-controls="view-set">試合情報</button>
+    <button role="tab" id="tab-data" aria-selected="false" aria-controls="view-data">データ</button>
+  </nav>
+
+  <main>
+    <!-- ============ 記録 ============ -->
+    <section class="view active" id="view-log" role="tabpanel" aria-labelledby="tab-log">
+      <div class="scoreboard">
+        <div class="meta-line">
+          <b id="mCompetition">—</b><span>·</span><span id="mDate">—</span><span>·</span><span id="mVenue">—</span>
+        </div>
+        <div class="score-row">
+          <div class="team-block">
+            <div class="sh" id="homeShort">HOME</div>
+            <div class="nm" id="homeName">—</div>
+            <div class="pts" id="homeScore">0</div>
+          </div>
+          <div class="clock-cell">
+            <div class="per" id="periodLabel">1st</div>
+            <button class="clock-btn" id="clockBtn" aria-label="時計の開始と停止">00:00</button>
+            <div class="clock-hint" id="clockHint">タップで開始</div>
+          </div>
+          <div class="team-block">
+            <div class="sh" id="awayShort">AWAY</div>
+            <div class="nm" id="awayName">—</div>
+            <div class="pts" id="awayScore">0</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="clock-tools">
+        <button id="btnMinus10">−10秒</button>
+        <button id="btnPlus10">＋10秒</button>
+        <button id="btnPeriod" class="strong">次のピリオド</button>
+        <button id="btnFinish" class="strong">試合終了</button>
+      </div>
+
+      <div class="log-grid">
+        <div class="side-card" data-side="home">
+          <div class="cap"><span class="dot" id="dotHome"></span><span id="capHome">HOME</span></div>
+          <button class="primary-act" data-side="home" data-act="0"><span id="pHome">＋1</span><small id="pHomeL">GOAL</small></button>
+          <div class="sub-acts" id="subHome"></div>
+        </div>
+        <div class="side-card" data-side="away">
+          <div class="cap"><span class="dot" id="dotAway"></span><span id="capAway">AWAY</span></div>
+          <button class="primary-act" data-side="away" data-act="0"><span id="pAway">＋1</span><small id="pAwayL">GOAL</small></button>
+          <div class="sub-acts" id="subAway"></div>
+        </div>
+      </div>
+
+      <div class="match-tools">
+        <button id="btnUndo">直前を取り消す</button>
+        <button id="btnMemoFocus">メモを書く</button>
+      </div>
+
+      <div class="note-row">
+        <input id="memoInput" type="text" placeholder="メモ（例: 相手10番が起点）" maxlength="120" enterkeyhint="done">
+        <button id="btnMemoAdd">記録</button>
+      </div>
+
+      <div class="tl-head">
+        <h2>タイムライン</h2>
+        <div class="spacer"></div>
+        <label><input type="checkbox" id="hideSystem"> 自動記録を隠す</label>
+      </div>
+      <ul class="timeline" id="timeline"></ul>
+    </section>
+
+    <!-- ============ 試合情報 ============ -->
+    <section class="view" id="view-set" role="tabpanel" aria-labelledby="tab-set">
+      <fieldset>
+        <legend>競技</legend>
+        <div class="seg">
+          <button id="sportSoccer" aria-pressed="true">サッカー</button>
+          <button id="sportBasket" aria-pressed="false">バスケットボール</button>
+        </div>
+        <p class="note" style="margin-top:10px">競技を切り替えると、記録済みのイベントとクロックは消えます。切り替える前に「データ」画面で書き出してください。</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>試合</legend>
+        <div class="field"><label for="fCompetition">大会名</label><input id="fCompetition" type="text"></div>
+        <div class="row2">
+          <div class="field"><label for="fDate">日付</label><input id="fDate" type="date"></div>
+          <div class="field"><label for="fPeriodLen">ピリオド長（分）</label><input id="fPeriodLen" type="number" min="1" max="60" inputmode="numeric"></div>
+        </div>
+        <div class="field"><label for="fVenue">会場</label><input id="fVenue" type="text"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>ホーム</legend>
+        <div class="field"><label for="fHomeName">チーム名</label><input id="fHomeName" type="text"></div>
+        <div class="row2">
+          <div class="field"><label for="fHomeShort">略称</label><input id="fHomeShort" type="text" maxlength="6"></div>
+          <div class="field"><label for="fHomeColor">色</label><input id="fHomeColor" type="color"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>アウェイ</legend>
+        <div class="field"><label for="fAwayName">チーム名</label><input id="fAwayName" type="text"></div>
+        <div class="row2">
+          <div class="field"><label for="fAwayShort">略称</label><input id="fAwayShort" type="text" maxlength="6"></div>
+          <div class="field"><label for="fAwayColor">色</label><input id="fAwayColor" type="color"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Mac版の書き出し設定（そのまま渡す値）</legend>
+        <div class="row2">
+          <div class="field"><label for="fPreRoll">前のり秒</label><input id="fPreRoll" type="number" min="0" max="60" inputmode="numeric"></div>
+          <div class="field"><label for="fPostRoll">後のり秒</label><input id="fPostRoll" type="number" min="0" max="60" inputmode="numeric"></div>
+        </div>
+      </fieldset>
+    </section>
+
+    <!-- ============ データ ============ -->
+    <section class="view" id="view-data" role="tabpanel" aria-labelledby="tab-data">
+      <button class="big-btn accent" id="btnShare"><span class="ic">↗</span><span class="tx">共有して渡す<small>AirDrop・ファイルアプリ・メール（Web Share）</small></span></button>
+      <button class="big-btn" id="btnDownload"><span class="ic">⬇</span><span class="tx">JSONをダウンロード<small id="dlName">—</small></span></button>
+      <button class="big-btn" id="btnShowJson"><span class="ic">📋</span><span class="tx">JSONを表示してコピー<small>ダウンロードや共有がうまくいかないとき</small></span></button>
+      <div id="jsonFallback" class="hidden">
+        <div class="note" style="margin-bottom:8px">ファイル名: <code id="jsonFbName">—</code><br>下の枠を長押し（PCは⌘A）で全選択できます。コピー後、この名前を付けて保存してください。</div>
+        <textarea id="jsonFbText" readonly wrap="soft"></textarea>
+        <button class="big-btn accent" id="btnCopyJson" style="margin-top:8px"><span class="ic">⧉</span><span class="tx">クリップボードにコピー</span></button>
+      </div>
+      <button class="big-btn" id="btnImport"><span class="ic">⬆</span><span class="tx">JSONを取り込む<small>途中から再開する・中身を確認する</small></span></button>
+      <input id="fileInput" class="hidden" type="file" accept="application/json,.json">
+
+      <div class="tl-head" style="margin-top:18px">
+        <h2>保存されている試合</h2>
+        <div class="spacer"></div>
+        <button id="btnNewMatch" style="font-size:12px;font-weight:700;color:var(--lime)">＋ 新規</button>
+      </div>
+      <ul class="matches" id="matchList"></ul>
+
+      <div class="tl-head" style="margin-top:18px"><h2>状態</h2></div>
+      <div class="note" id="diag">…</div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="./core.js"></script>
+<script>
+"use strict";
+(function () {
+  var C = window.PlaycutCore;
+
+  /* ================= 状態 ================= */
+  var state = {
+    project: null,       // MatchProject
+    recordId: null,      // 保存レコードの内部ID（MatchProject には含めない）
+    runningSince: null,  // クロック稼働開始の実時刻ms。止まっていれば null
+    finishArmed: false,
+    hideSystem: false,
+    list: [],            // [{id,updatedAt,summary}]
+    persisted: null,     // navigator.storage.persist() の結果
+    storage: "?",        // "IndexedDB" / "localStorage"
+    swState: "未登録",
+  };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var saveTimer = null;
+  var tickTimer = null;
+  var wakeLock = null;
+
+  /* ================= 保存層 =================
+   * 主: IndexedDB（iOS でも Home Screen PWA なら残りやすい）
+   * 従: localStorage（IDB が使えない環境のフォールバック）
+   * どちらにも同じ内容を書く。読むときは IDB を優先し、空なら localStorage。
+   */
+  var DB_NAME = "playcut-logger";
+  var DB_VER = 1;
+  var STORE = "matches";
+  var META = "meta";
+  var LS_KEY = "playcut-logger-matches-v1";
+  var LS_CUR = "playcut-logger-current-v1";
+  var dbPromise = null;
+
+  function openDb() {
+    if (dbPromise) return dbPromise;
+    dbPromise = new Promise(function (resolve, reject) {
+      if (!("indexedDB" in window)) { reject(new Error("no indexedDB")); return; }
+      var req;
+      try { req = indexedDB.open(DB_NAME, DB_VER); }
+      catch (e) { reject(e); return; }
+      req.onupgradeneeded = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE, { keyPath: "id" });
+        if (!db.objectStoreNames.contains(META)) db.createObjectStore(META);
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error || new Error("indexedDB open failed")); };
+      req.onblocked = function () { reject(new Error("indexedDB blocked")); };
+    }).catch(function (e) { dbPromise = null; throw e; });
+    return dbPromise;
+  }
+
+  function idbTx(storeNames, mode, fn) {
+    return openDb().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(storeNames, mode);
+        var out;
+        tx.oncomplete = function () { resolve(out); };
+        tx.onerror = function () { reject(tx.error); };
+        tx.onabort = function () { reject(tx.error || new Error("aborted")); };
+        out = fn(tx);
+      });
+    });
+  }
+
+  function reqValue(request) {
+    return new Promise(function (resolve, reject) {
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error); };
+    });
+  }
+
+  function lsAll() {
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      var parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+  }
+
+  function lsWrite(records) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(records)); return true; }
+    catch (e) { return false; }
+  }
+
+  function saveRecord(record) {
+    /* localStorage は同期で先に書く（IDB が落ちても最低限残す）。 */
+    var records = lsAll().filter(function (r) { return r.id !== record.id; });
+    records.push(record);
+    lsWrite(records);
+    try { localStorage.setItem(LS_CUR, record.id); } catch (e) {}
+
+    return idbTx([STORE, META], "readwrite", function (tx) {
+      tx.objectStore(STORE).put(record);
+      tx.objectStore(META).put(record.id, "currentId");
+    }).then(function () {
+      state.storage = "IndexedDB";
+      return true;
+    }).catch(function () {
+      state.storage = "localStorage";
+      return false;
+    });
+  }
+
+  function deleteRecord(id) {
+    lsWrite(lsAll().filter(function (r) { return r.id !== id; }));
+    return idbTx([STORE], "readwrite", function (tx) {
+      tx.objectStore(STORE).delete(id);
+    }).catch(function () { return false; });
+  }
+
+  function loadAll() {
+    return idbTx([STORE, META], "readonly", function (tx) {
+      return Promise.all([
+        reqValue(tx.objectStore(STORE).getAll()),
+        reqValue(tx.objectStore(META).get("currentId")),
+      ]);
+    }).then(function (pair) {
+      state.storage = "IndexedDB";
+      var records = pair[0] || [];
+      if (!records.length) {
+        /* IDB が空でも localStorage に残っていれば拾って IDB へ移す。 */
+        var fallback = lsAll();
+        if (fallback.length) {
+          fallback.forEach(function (r) { saveRecord(r); });
+          return { records: fallback, currentId: safeLsCur() };
+        }
+      }
+      return { records: records, currentId: pair[1] || safeLsCur() };
+    }).catch(function () {
+      state.storage = "localStorage";
+      return { records: lsAll(), currentId: safeLsCur() };
+    });
+  }
+
+  function safeLsCur() {
+    try { return localStorage.getItem(LS_CUR); } catch (e) { return null; }
+  }
+
+  /* ================= 保存トリガ ================= */
+
+  function currentRecord() {
+    var clockMs = C.displayClockMs(state.project, state.runningSince, Date.now());
+    var project = C.toMatchProject(state.project, clockMs);
+    return {
+      id: state.recordId,
+      updatedAt: new Date().toISOString(),
+      project: project,
+    };
+  }
+
+  function persist(immediate) {
+    if (!state.project || !state.recordId) return Promise.resolve();
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    var run = function () {
+      setSavePill("保存中…");
+      return saveRecord(currentRecord()).then(function () {
+        setSavePill("保存済");
+        refreshList();
+      });
+    };
+    if (immediate) return run();
+    return new Promise(function (resolve) {
+      saveTimer = setTimeout(function () { saveTimer = null; run().then(resolve); }, 400);
+    });
+  }
+
+  function setSavePill(text) {
+    $("savePill").textContent = text;
+  }
+
+  /* ================= 記録 ================= */
+
+  function record(spec, overrides) {
+    var now = Date.now();
+    state.project = C.ensureSession(state.project, now);
+    var event = C.makeEvent(spec, {
+      project: state.project,
+      runningSince: state.runningSince,
+      nowMs: now,
+      clockMs: overrides && overrides.clockMs,
+      period: overrides && overrides.period,
+      clockRunning: overrides && overrides.clockRunning,
+    });
+    state.project = C.appendEvent(state.project, event, now);
+    render();
+    persist(true);
+    return event;
+  }
+
+  function vibrate(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+  }
+
+  function startClock() {
+    if (state.project.finishedAt) return;
+    var now = Date.now();
+    state.project = C.ensureSession(state.project, now);
+    state.runningSince = now;
+    record({ type: "clock_start", label: "時計スタート", highlight: false, system: true }, { clockRunning: true });
+    startTick();
+    requestWakeLock();
+    toast("記録を開始しました");
+  }
+
+  function pauseClock() {
+    var frozen = C.displayClockMs(state.project, state.runningSince, Date.now());
+    state.project = Object.assign({}, state.project, { clockMs: frozen });
+    state.runningSince = null;
+    record({ type: "clock_pause", label: "時計ストップ", highlight: false, system: true },
+           { clockMs: frozen, clockRunning: false });
+    stopTick();
+    releaseWakeLock();
+  }
+
+  function nudge(deltaMs) {
+    var cur = C.displayClockMs(state.project, state.runningSince, Date.now());
+    var next = C.nudgeClock(cur, deltaMs);
+    state.project = Object.assign({}, state.project, { clockMs: next });
+    if (state.runningSince) state.runningSince = Date.now();
+    render();
+    persist();
+    toast((deltaMs > 0 ? "＋" : "−") + Math.abs(deltaMs / 1000) + "秒");
+  }
+
+  function nextPeriod() {
+    if (state.project.finishedAt) return;
+    var next = state.project.period + 1;
+    state.runningSince = null;
+    stopTick();
+    state.project = Object.assign({}, state.project, { period: next, clockMs: 0 });
+    record({ type: "period", label: C.periodLabel(state.project.sport, next) + " 開始", highlight: false, system: true },
+           { period: next, clockMs: 0, clockRunning: false });
+    toast(C.periodLabel(state.project.sport, next) + " へ進みました");
+  }
+
+  function finishMatch() {
+    if (state.project.finishedAt) { toast("この試合はすでに終了しています"); return; }
+    if (!state.finishArmed) {
+      state.finishArmed = true;
+      $("btnFinish").textContent = "もう一度で終了";
+      toast("もう一度タップすると試合を終了します");
+      setTimeout(function () {
+        state.finishArmed = false;
+        $("btnFinish").textContent = "試合終了";
+      }, 3500);
+      return;
+    }
+    var frozen = C.displayClockMs(state.project, state.runningSince, Date.now());
+    state.runningSince = null;
+    state.finishArmed = false;
+    stopTick();
+    releaseWakeLock();
+    $("btnFinish").textContent = "試合終了";
+    record({ type: "match_end", label: "試合終了", highlight: false, system: true },
+           { clockMs: frozen, clockRunning: false });
+    state.project = Object.assign({}, state.project, { clockMs: frozen, finishedAt: new Date().toISOString() });
+    render();
+    persist(true);
+    toast("試合を終了しました。データは保存済みです");
+  }
+
+  function undoLast() {
+    var index = C.lastUserEventIndex(state.project.events);
+    if (index < 0) { toast("取り消せる記録がありません"); return; }
+    var target = state.project.events[index];
+    state.project = Object.assign({}, state.project, {
+      events: C.removeEventAt(state.project.events, index),
+    });
+    render();
+    persist(true);
+    toast(target.label + " を取り消しました");
+  }
+
+  function deleteEvent(id) {
+    state.project = Object.assign({}, state.project, {
+      events: C.removeEventById(state.project.events, id),
+    });
+    render();
+    persist(true);
+    toast("1件削除しました");
+  }
+
+  /* ================= クロック描画 ================= */
+
+  function startTick() {
+    stopTick();
+    tickTimer = setInterval(renderClock, 250);
+  }
+  function stopTick() {
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  }
+
+  function renderClock() {
+    var p = state.project;
+    var ms = C.displayClockMs(p, state.runningSince, Date.now());
+    $("clockBtn").textContent = C.formatClock(ms, p.sport, p.periodLengthMinutes);
+    $("clockBtn").classList.toggle("running", Boolean(state.runningSince));
+    $("periodLabel").textContent = C.periodLabel(p.sport, p.period);
+    $("clockHint").textContent = p.finishedAt ? "FINAL" : state.runningSince ? "タップで一時停止" : "タップで開始";
+    $("liveDot").classList.toggle("on", Boolean(state.runningSince));
+  }
+
+  /* ================= 画面全体の描画 ================= */
+
+  function render() {
+    var p = state.project;
+    if (!p) return;
+
+    $("mCompetition").textContent = p.competition || "—";
+    $("mDate").textContent = p.date || "—";
+    $("mVenue").textContent = p.venue || "—";
+    $("homeShort").textContent = p.home.short || "HOME";
+    $("awayShort").textContent = p.away.short || "AWAY";
+    $("homeName").textContent = p.home.name || "—";
+    $("awayName").textContent = p.away.name || "—";
+    $("homeShort").style.color = p.home.color;
+    $("awayShort").style.color = p.away.color;
+    $("dotHome").style.background = p.home.color;
+    $("dotAway").style.background = p.away.color;
+    $("capHome").textContent = p.home.short || "HOME";
+    $("capAway").textContent = p.away.short || "AWAY";
+
+    var score = C.deriveScore(p.events);
+    $("homeScore").textContent = String(score.home);
+    $("awayScore").textContent = String(score.away);
+
+    renderClock();
+    renderActions();
+    renderTimeline();
+    $("dlName").textContent = C.exportFilename(p);
+    $("sportSoccer").setAttribute("aria-pressed", String(p.sport === "soccer"));
+    $("sportBasket").setAttribute("aria-pressed", String(p.sport === "basketball"));
+
+    var done = Boolean(p.finishedAt);
+    ["btnPeriod", "btnMinus10", "btnPlus10", "btnMemoAdd"].forEach(function (id) {
+      $(id).disabled = done;
+    });
+    $("clockBtn").disabled = done;
+  }
+
+  function renderActions() {
+    var p = state.project;
+    var actions = C.quickActions(p.sport);
+    var primary = actions[0];
+    var rest = actions.slice(1);
+    var done = Boolean(p.finishedAt);
+
+    $("pHome").textContent = "＋" + primary.delta;
+    $("pAway").textContent = "＋" + primary.delta;
+    $("pHomeL").textContent = p.sport === "soccer" ? "GOAL" : "SCORE";
+    $("pAwayL").textContent = p.sport === "soccer" ? "GOAL" : "SCORE";
+    document.querySelectorAll(".primary-act").forEach(function (b) { b.disabled = done; });
+
+    ["home", "away"].forEach(function (side) {
+      var host = $(side === "home" ? "subHome" : "subAway");
+      host.textContent = "";
+      rest.forEach(function (a, i) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = a.label + (a.delta ? " ＋" + a.delta : "");
+        if (a.type === "chance") b.className = "star";
+        if (i === rest.length - 1 && rest.length % 2 === 1) b.className += " wide";
+        b.disabled = done;
+        b.addEventListener("click", function () { quick(side, a); });
+        host.appendChild(b);
+      });
+    });
+  }
+
+  function quick(side, action) {
+    record({
+      type: action.type,
+      label: action.label,
+      team: side,
+      delta: action.delta,
+      highlight: C.isHighlightType(action.type),
+    });
+    vibrate(action.delta ? [40, 30, 70] : 35);
+    toast(state.project[side].short + " · " + action.label);
+  }
+
+  function renderTimeline() {
+    var p = state.project;
+    var host = $("timeline");
+    host.textContent = "";
+    var events = p.events.slice().reverse();
+    if (state.hideSystem) events = events.filter(function (e) { return !e.system; });
+    if (!events.length) {
+      var empty = document.createElement("li");
+      empty.className = "empty";
+      empty.style.display = "block";
+      empty.textContent = "まだ記録がありません。時計をタップして始めてください。";
+      host.appendChild(empty);
+      return;
+    }
+    events.slice(0, 120).forEach(function (e) {
+      var li = document.createElement("li");
+      if (e.system) li.className = "sys";
+      else if (e.highlight) li.className = "hl";
+
+      var t = document.createElement("span");
+      t.className = "t";
+      t.textContent = C.periodLabel(p.sport, e.period) + " " + C.formatClock(e.clockMs, p.sport, p.periodLengthMinutes);
+      li.appendChild(t);
+
+      if (e.team) {
+        var tm = document.createElement("span");
+        tm.className = "tm";
+        tm.textContent = p[e.team].short;
+        tm.style.color = p[e.team].color;
+        li.appendChild(tm);
+      }
+
+      var lb = document.createElement("span");
+      lb.className = "lb";
+      lb.textContent = e.label + (e.delta ? " (+" + e.delta + ")" : "");
+      li.appendChild(lb);
+
+      if (!e.system) {
+        var del = document.createElement("button");
+        del.className = "dl";
+        del.type = "button";
+        del.textContent = "×";
+        del.setAttribute("aria-label", e.label + " を削除");
+        del.addEventListener("click", function () { deleteEvent(e.id); });
+        li.appendChild(del);
+      }
+      host.appendChild(li);
+    });
+  }
+
+  /* ================= 試合一覧 ================= */
+
+  function refreshList() {
+    return loadAll().then(function (data) {
+      state.list = (data.records || []).slice().sort(function (a, b) {
+        return String(b.updatedAt).localeCompare(String(a.updatedAt));
+      });
+      renderList();
+      renderDiag();
+    });
+  }
+
+  function renderList() {
+    var host = $("matchList");
+    host.textContent = "";
+    if (!state.list.length) {
+      var empty = document.createElement("li");
+      empty.className = "empty";
+      empty.style.display = "block";
+      empty.textContent = "保存されている試合はありません。";
+      host.appendChild(empty);
+      return;
+    }
+    state.list.forEach(function (rec) {
+      var p = rec.project;
+      var li = document.createElement("li");
+      if (rec.id === state.recordId) li.className = "cur";
+
+      var info = document.createElement("div");
+      info.className = "info";
+      var b = document.createElement("b");
+      var score = C.deriveScore(p.events);
+      b.textContent = p.home.short + " " + score.home + " − " + score.away + " " + p.away.short;
+      var small = document.createElement("small");
+      small.textContent = p.date + " · " + (p.sport === "soccer" ? "サッカー" : "バスケ") +
+        " · " + p.events.length + "件" + (p.finishedAt ? " · 終了" : "") +
+        (rec.id === state.recordId ? " · 編集中" : "");
+      info.appendChild(b);
+      info.appendChild(small);
+      li.appendChild(info);
+
+      if (rec.id !== state.recordId) {
+        var open = document.createElement("button");
+        open.type = "button";
+        open.textContent = "開く";
+        open.addEventListener("click", function () { openRecord(rec.id); });
+        li.appendChild(open);
+      }
+      var del = document.createElement("button");
+      del.type = "button";
+      del.className = "del";
+      del.textContent = "削除";
+      del.addEventListener("click", function () { confirmDelete(rec); });
+      li.appendChild(del);
+
+      host.appendChild(li);
+    });
+  }
+
+  function confirmDelete(rec) {
+    var score = C.deriveScore(rec.project.events);
+    var name = rec.project.home.short + " " + score.home + "−" + score.away + " " + rec.project.away.short;
+    if (!window.confirm(name + " を削除します。元に戻せません。よろしいですか？")) return;
+    var wasCurrent = rec.id === state.recordId;
+    deleteRecord(rec.id).then(function () {
+      if (wasCurrent) return newMatch(true);
+      return refreshList();
+    }).then(function () { toast("削除しました"); });
+  }
+
+  function openRecord(id) {
+    var rec = state.list.filter(function (r) { return r.id === id; })[0];
+    if (!rec) return;
+    state.recordId = rec.id;
+    state.project = C.toMatchProject(rec.project);
+    state.runningSince = null;
+    stopTick();
+    render();
+    fillForm();
+    persist(true);
+    showView("log");
+    toast("試合を切り替えました");
+  }
+
+  function newMatch(silent) {
+    var sport = state.project ? state.project.sport : "soccer";
+    state.recordId = C.uid();
+    state.project = C.newProject(sport, Date.now());
+    state.runningSince = null;
+    stopTick();
+    render();
+    fillForm();
+    return persist(true).then(function () {
+      if (!silent) { toast("新しい試合を作成しました"); showView("set"); }
+    });
+  }
+
+  /* ================= 書き出し / 取り込み ================= */
+
+  function exportPayload() {
+    var clockMs = C.displayClockMs(state.project, state.runningSince, Date.now());
+    return {
+      name: C.exportFilename(state.project),
+      text: C.serializeProject(state.project, clockMs),
+    };
+  }
+
+  function downloadJson() {
+    var payload = exportPayload();
+    var blob = new Blob([payload.text], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = payload.name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    toast(payload.name + " を書き出しました");
+  }
+
+  /*
+   * 最終フォールバック。ダウンロードも Web Share も不発な環境
+   * （iOS standalone PWA など）で、生 JSON を画面に出して手でコピーさせる。
+   */
+  function toggleJsonFallback() {
+    var box = $("jsonFallback");
+    var willShow = box.classList.contains("hidden");
+    if (!willShow) { box.classList.add("hidden"); return; }
+    var payload = exportPayload();
+    $("jsonFbName").textContent = payload.name;
+    var ta = $("jsonFbText");
+    ta.value = payload.text;
+    box.classList.remove("hidden");
+    ta.focus();
+    try { ta.setSelectionRange(0, ta.value.length); } catch (e) {}
+    box.scrollIntoView({ block: "start" });
+  }
+
+  function copyJsonToClipboard() {
+    var ta = $("jsonFbText");
+    var text = ta.value;
+    var fallbackSelect = function () {
+      ta.focus();
+      try { ta.setSelectionRange(0, text.length); } catch (e) {}
+      toast("⌘Cでコピーしてください");
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () {
+        toast("コピーしました");
+      }).catch(fallbackSelect);
+    } else {
+      fallbackSelect();
+    }
+  }
+
+  function shareJson() {
+    var payload = exportPayload();
+    if (!navigator.share) { toast("この端末は共有に対応していません。ダウンロードを使ってください"); downloadJson(); return; }
+    var file = null;
+    try {
+      file = new File([payload.text], payload.name, { type: "application/json" });
+    } catch (e) { file = null; }
+
+    var data = file && navigator.canShare && navigator.canShare({ files: [file] })
+      ? { files: [file], title: payload.name }
+      : { title: payload.name, text: payload.text };
+
+    navigator.share(data).then(function () {
+      toast("共有しました");
+    }).catch(function (err) {
+      if (err && err.name === "AbortError") return;
+      toast("共有できませんでした。ダウンロードを使ってください");
+    });
+  }
+
+  function importJson(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var result = C.parseProject(String(reader.result));
+      if (!result.ok) {
+        toast("読み込めませんでした: " + result.errors[0]);
+        return;
+      }
+      state.recordId = C.uid();
+      state.project = result.project;
+      state.runningSince = null;
+      stopTick();
+      render();
+      fillForm();
+      persist(true);
+      showView("log");
+      toast("試合データを読み込みました");
+    };
+    reader.onerror = function () { toast("ファイルを読めませんでした"); };
+    reader.readAsText(file);
+  }
+
+  /* ================= 設定フォーム ================= */
+
+  var FORM = [
+    ["fCompetition", "competition", "text"],
+    ["fDate", "date", "text"],
+    ["fVenue", "venue", "text"],
+    ["fPeriodLen", "periodLengthMinutes", "number"],
+    ["fPreRoll", "preRollSec", "number"],
+    ["fPostRoll", "postRollSec", "number"],
+  ];
+  var TEAM_FORM = [
+    ["fHomeName", "home", "name"], ["fHomeShort", "home", "short"], ["fHomeColor", "home", "color"],
+    ["fAwayName", "away", "name"], ["fAwayShort", "away", "short"], ["fAwayColor", "away", "color"],
+  ];
+
+  function fillForm() {
+    var p = state.project;
+    FORM.forEach(function (f) { $(f[0]).value = p[f[1]]; });
+    TEAM_FORM.forEach(function (f) { $(f[0]).value = p[f[1]][f[2]]; });
+  }
+
+  /* 数値フィールドごとの最小値。ピリオド長は 0 だとバスケの時計が常時 00:00 になる。 */
+  var NUMBER_MIN = { periodLengthMinutes: 1, preRollSec: 0, postRollSec: 0 };
+
+  function bindForm() {
+    FORM.forEach(function (f) {
+      var applyNumber = function (raw, clamp) {
+        var s = String(raw).trim();
+        if (s === "") return;              // 入力途中の空欄は値を壊さない
+        var v = Number(s);
+        if (!isFinite(v)) return;
+        var min = NUMBER_MIN[f[1]] != null ? NUMBER_MIN[f[1]] : 0;
+        if (v < min) {
+          if (!clamp) return;              // 入力中は下限割れを無視、確定時のみクランプ
+          v = min;
+          $(f[0]).value = String(min);
+        }
+        var patch = {};
+        patch[f[1]] = v;
+        state.project = Object.assign({}, state.project, patch);
+        render();
+        persist();
+      };
+      if (f[2] === "number") {
+        $(f[0]).addEventListener("input", function (e) { applyNumber(e.target.value, false); });
+        $(f[0]).addEventListener("change", function (e) { applyNumber(e.target.value, true); });
+      } else {
+        $(f[0]).addEventListener("input", function (e) {
+          var patch = {};
+          patch[f[1]] = e.target.value;
+          state.project = Object.assign({}, state.project, patch);
+          render();
+          persist();
+        });
+      }
+    });
+    TEAM_FORM.forEach(function (f) {
+      $(f[0]).addEventListener("input", function (e) {
+        var team = Object.assign({}, state.project[f[1]]);
+        team[f[2]] = e.target.value;
+        var patch = {};
+        patch[f[1]] = team;
+        state.project = Object.assign({}, state.project, patch);
+        render();
+        persist();
+      });
+    });
+  }
+
+  function changeSport(sport) {
+    if (sport === state.project.sport) return;
+    if (state.project.events.length &&
+        !window.confirm("競技を切り替えると、記録済みの " + state.project.events.length + " 件が消えます。よろしいですか？")) {
+      render();
+      return;
+    }
+    state.runningSince = null;
+    stopTick();
+    state.project = C.switchSport(state.project, sport);
+    render();
+    fillForm();
+    persist(true);
+    toast((sport === "soccer" ? "サッカー" : "バスケットボール") + "へ切り替えました");
+  }
+
+  /* ================= 画面まわり ================= */
+
+  function showView(key) {
+    ["log", "set", "data"].forEach(function (k) {
+      $("view-" + k).classList.toggle("active", k === key);
+      $("tab-" + k).setAttribute("aria-selected", String(k === key));
+    });
+    if (key === "data") refreshList();
+    window.scrollTo(0, 0);
+  }
+
+  var toastTimer = null;
+  function toast(message) {
+    var el = $("toast");
+    el.textContent = message;
+    el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove("show"); }, 2200);
+  }
+
+  function setNetPill() {
+    var el = $("netPill");
+    var online = navigator.onLine;
+    el.textContent = online ? "オンライン" : "オフラインで動作中";
+    el.className = "pill " + (online ? "" : "off");
+  }
+
+  function renderDiag() {
+    var lines = [
+      "保存先: " + state.storage,
+      "永続化の許可: " + (state.persisted === null ? "未確認" : state.persisted ? "あり" : "なし（端末が空き容量不足になると消える可能性）"),
+      "Service Worker: " + state.swState,
+      "表示モード: " + (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone ? "ホーム画面から起動（standalone）" : "ブラウザのタブ"),
+      "保存済みの試合: " + state.list.length + " 件",
+      "通信: " + (navigator.onLine ? "あり" : "なし"),
+    ];
+    var host = $("diag");
+    host.textContent = "";
+    lines.forEach(function (line) {
+      var div = document.createElement("div");
+      div.textContent = line;
+      host.appendChild(div);
+    });
+  }
+
+  /* ---- 画面スリープ防止（無ければ黙って諦める） ---- */
+  function requestWakeLock() {
+    try {
+      if (!navigator.wakeLock || wakeLock) return;
+      navigator.wakeLock.request("screen").then(function (handle) {
+        wakeLock = handle;
+        handle.addEventListener && handle.addEventListener("release", function () { wakeLock = null; });
+      }).catch(function () { wakeLock = null; });
+    } catch (e) { wakeLock = null; }
+  }
+  function releaseWakeLock() {
+    try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) { wakeLock = null; }
+  }
+
+  /* ================= 起動 ================= */
+
+  function bind() {
+    ["log", "set", "data"].forEach(function (k) {
+      $("tab-" + k).addEventListener("click", function () { showView(k); });
+    });
+
+    $("clockBtn").addEventListener("click", function () {
+      if (state.runningSince) pauseClock(); else startClock();
+    });
+    $("btnMinus10").addEventListener("click", function () { nudge(-10000); });
+    $("btnPlus10").addEventListener("click", function () { nudge(10000); });
+    $("btnPeriod").addEventListener("click", nextPeriod);
+    $("btnFinish").addEventListener("click", finishMatch);
+    $("btnUndo").addEventListener("click", undoLast);
+
+    document.querySelectorAll(".primary-act").forEach(function (b) {
+      b.addEventListener("click", function () {
+        quick(b.getAttribute("data-side"), C.quickActions(state.project.sport)[0]);
+      });
+    });
+
+    $("btnMemoFocus").addEventListener("click", function () { $("memoInput").focus(); });
+    $("btnMemoAdd").addEventListener("click", addMemo);
+    $("memoInput").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); addMemo(); }
+    });
+
+    $("hideSystem").addEventListener("change", function (e) {
+      state.hideSystem = e.target.checked;
+      renderTimeline();
+    });
+
+    $("sportSoccer").addEventListener("click", function () { changeSport("soccer"); });
+    $("sportBasket").addEventListener("click", function () { changeSport("basketball"); });
+
+    $("btnDownload").addEventListener("click", downloadJson);
+    $("btnShowJson").addEventListener("click", toggleJsonFallback);
+    $("btnCopyJson").addEventListener("click", copyJsonToClipboard);
+    $("jsonFbText").addEventListener("focus", function () {
+      try { this.setSelectionRange(0, this.value.length); } catch (e) {}
+    });
+    $("btnShare").addEventListener("click", shareJson);
+    $("btnImport").addEventListener("click", function () { $("fileInput").click(); });
+    $("fileInput").addEventListener("change", function (e) {
+      var file = e.target.files && e.target.files[0];
+      if (file) importJson(file);
+      e.target.value = "";
+    });
+    $("btnNewMatch").addEventListener("click", function () { newMatch(false); });
+
+    window.addEventListener("online", function () { setNetPill(); renderDiag(); });
+    window.addEventListener("offline", function () { setNetPill(); renderDiag(); });
+
+    /* アプリが隠れる・閉じられる瞬間に必ず書く。iOS はここが最後の機会。 */
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "hidden") persist(true);
+      else if (state.runningSince) requestWakeLock();
+    });
+    window.addEventListener("pagehide", function () { persist(true); });
+
+    /* 誤操作でページを離れそうなときだけ止める（記録中のみ）。 */
+    window.addEventListener("beforeunload", function (e) {
+      if (!state.runningSince) return;
+      e.preventDefault();
+      e.returnValue = "";
+    });
+  }
+
+  function addMemo() {
+    var input = $("memoInput");
+    var text = input.value.trim();
+    if (!text) { toast("メモを入力してください"); return; }
+    record({ type: "note", label: text, highlight: false });
+    input.value = "";
+    input.blur();
+    toast("メモを記録しました");
+  }
+
+  function registerSW() {
+    if (!("serviceWorker" in navigator)) {
+      state.swState = "この環境では使えない（http のままかも）";
+      renderDiag();
+      return;
+    }
+    navigator.serviceWorker.register("./sw.js", { scope: "./" }).then(function (reg) {
+      state.swState = reg.active ? "有効（オフライン起動できます）" : "登録済み・準備中";
+      renderDiag();
+      return navigator.serviceWorker.ready;
+    }).then(function () {
+      state.swState = "有効（オフライン起動できます）";
+      renderDiag();
+    }).catch(function (err) {
+      state.swState = "登録に失敗: " + (err && err.message ? err.message : String(err));
+      renderDiag();
+    });
+  }
+
+  function askPersistence() {
+    try {
+      if (navigator.storage && navigator.storage.persisted) {
+        navigator.storage.persisted().then(function (already) {
+          if (already) { state.persisted = true; renderDiag(); return; }
+          if (navigator.storage.persist) {
+            navigator.storage.persist().then(function (ok) { state.persisted = ok; renderDiag(); });
+          }
+        }).catch(function () {});
+      }
+    } catch (e) {}
+  }
+
+  function boot() {
+    bind();
+    bindForm();
+    setNetPill();
+
+    loadAll().then(function (data) {
+      var records = data.records || [];
+      var chosen = null;
+      if (data.currentId) chosen = records.filter(function (r) { return r.id === data.currentId; })[0] || null;
+      if (!chosen && records.length) {
+        chosen = records.slice().sort(function (a, b) {
+          return String(b.updatedAt).localeCompare(String(a.updatedAt));
+        })[0];
+      }
+      if (chosen && chosen.project) {
+        state.recordId = chosen.id;
+        state.project = C.toMatchProject(chosen.project);
+      } else {
+        state.recordId = C.uid();
+        state.project = C.newProject("soccer", Date.now());
+      }
+      state.runningSince = null;   // 起動時は必ず止まった状態から。時計は勝手に進めない。
+      render();
+      fillForm();
+      return persist(true);
+    }).catch(function (err) {
+      state.recordId = C.uid();
+      state.project = C.newProject("soccer", Date.now());
+      render();
+      fillForm();
+      toast("保存データを読めませんでした。新しい試合で開始します");
+    }).then(function () {
+      refreshList();
+      registerSW();
+      askPersistence();
+    });
+
+    /* デバッグ・自動検証から状態を覗くための口。UI からは使わない。 */
+    window.__playcut = state;
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
